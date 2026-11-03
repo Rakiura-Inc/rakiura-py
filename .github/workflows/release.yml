@@ -1,4 +1,4 @@
-# Push a tag like v0.2.0 (matching src/rakiura/_version.py) to build the package, record
+# Push a tag like v0.3.1 (matching src/rakiura/_version.py) to build the package, record
 # its build provenance and attach the wheel and sdist to a GitHub Release. The steps live in the
 # shared workflows: https://github.com/Rakiura-Inc/.github
 

@@ -160,8 +160,9 @@ This repository follows [Rakiura-Inc/python-template](https://github.com/Rakiura
 1. Bump `__version__` in `src/rakiura/_version.py` and add the entry to `CHANGELOG.md`.
 2. Merge to `main`, then tag that commit and push the tag: `git tag v0.3.0 && git push origin v0.3.0`.
 3. The Release workflow builds the wheel and sdist, records their build provenance and attaches
-   them to a GitHub Release. Check a download with
-   `gh attestation verify <file> --repo Rakiura-Inc/rakiura-py`.
+   them to a GitHub Release. The shared release workflow signs the provenance, so check a
+   download with
+   `gh attestation verify <file> --repo Rakiura-Inc/rakiura-py --signer-workflow Rakiura-Inc/.github/.github/workflows/release.yml`.
 
 Notebooks that install from `@main` get the change as soon as it is merged. To pin a notebook to a
 release, install `@v0.3.0` instead of `@main`.
