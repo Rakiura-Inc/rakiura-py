@@ -74,7 +74,7 @@ def test_public_api_is_unchanged():
 def test_version_matches_the_package_metadata():
     from importlib.metadata import version
 
-    assert rakiura.__version__ == version("rakiura") == "0.3.0"
+    assert rakiura.__version__ == version("rakiura") == "0.3.1"
 
 
 def test_rakiura_error_keeps_its_0_1_signature():

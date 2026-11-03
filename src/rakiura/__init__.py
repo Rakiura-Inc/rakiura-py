@@ -41,6 +41,7 @@ Where things are: ``_login`` (connecting), ``_runs`` (start), ``_steps``
 ``_transport`` (HTTP), ``_credentials`` (the saved key).
 """
 
+from . import _credentials
 from ._artifacts import stage_figure, stage_link, stage_text
 from ._cells import checkpoint, checkpoint_cell, me, uncheck
 from ._config import API_PREFIX as API_PREFIX
@@ -54,6 +55,18 @@ from ._session import RakiuraError
 from ._session import session as _session  # noqa: F401 - the README points at rakiura._session.last_error
 from ._steps import done, submit
 from ._version import __version__ as __version__
+
+
+# Kept for nmrtrain and habtrain until rakiura 0.4.0 offers key_available(); same signatures as 0.2.0.
+def _colab_secret() -> str | None:
+    """RAKIURA_KEY from Colab's Secrets panel, when this is Colab and it is set."""
+    return _credentials.colab_secret()
+
+
+def _credentials_path() -> str:
+    """``RAKIURA_CREDENTIALS``, else the per-user config directory."""
+    return str(_credentials.credentials_path())
+
 
 __all__ = [
     "RakiuraError",
