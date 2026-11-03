@@ -4,8 +4,11 @@ The Rakiura notebook helper. A cell in your Jupyter or Colab notebook can tick a
 Rakiura checklist, add a figure or a few numbers to a step, and send the step for review when you
 choose. The step page in Rakiura always works without it.
 
-Pure standard library, Python 3.9 or later. It uses `requests` when that is installed, and never
-needs it.
+Pure standard library, Python 3.11 or later (tested on 3.11 to 3.15; Colab runs 3.12). It uses
+`requests` when that is installed, and never needs it.
+
+It is a Python package, not a notebook you copy, because every lab's notebooks install it with one
+`pip install` line (below) and call the same few functions.
 
 ## Install
 
@@ -27,10 +30,11 @@ This is the same quickstart as in Rakiura under Settings > Notebook key.
 
 ```python
 import rakiura
-rakiura.start(notebook="path/to/notebook.ipynb")   # the first time, open the link it prints and click Allow
-rakiura.done("part-2")                             # after you finish a part: ticks it on its step
-rakiura.done("exercise-1", figures=[fig])          # ticks it and adds the figure to the step
-rakiura.submit()                                   # when you're ready, sends the step for review
+
+rakiura.start(notebook="path/to/notebook.ipynb")  # the first time, open the link it prints and click Allow
+rakiura.done("part-2")  # after you finish a part: ticks it on its step
+rakiura.done("exercise-1", figures=[fig])  # ticks it and adds the figure to the step
+rakiura.submit()  # when you're ready, sends the step for review
 ```
 
 The first time, `rakiura.start()` prints a link like
@@ -96,7 +100,8 @@ except ImportError:
 if rakiura:
     rakiura.start(notebook="tutorials/tutorial_1.ipynb", repo="owner/name")
 ...
-if rakiura: rakiura.done("part-2")
+if rakiura:
+    rakiura.done("part-2")
 ```
 
 ## Submitting
@@ -127,15 +132,30 @@ When your commit is pushed to GitHub and unedited, a link to the notebook is att
   to this computer, for testing).
 - `RAKIURA_NO_BROWSER=1` stops it opening the sign-in link in your browser.
 
-## Tests
+## Development
+
+You need [uv](https://docs.astral.sh/uv/) and [prek](https://prek.j178.dev/) (or pre-commit).
 
 ```sh
-python -m venv .venv && .venv/bin/pip install -e ".[test]"
-.venv/bin/python -m pytest
+uv sync                  # a .venv with the package (editable) and the dev tools
+uv run pytest            # the tests, in parallel and in random order
+uv run ruff check .      # lint; `uv run ruff format .` formats
+uv run ty check          # type check
+prek install             # run the git hooks on every commit (prek run --all-files to run them now)
 ```
 
-The tests run a small fake server on this computer. No network, no real key, and never your real
-config folder.
+The tests run a small fake server on this computer, or mock the HTTP layer. No network, no real
+key, and never your real config folder. CI runs them on Python 3.11 to 3.15, then installs the
+built wheel in a clean venv and runs them again against it.
+
+## Releasing
+
+1. Bump `__version__` in `src/rakiura/_version.py` and add the entry to `CHANGELOG.md`.
+2. Merge to `main`, then tag that commit and push the tag: `git tag v0.3.0 && git push origin v0.3.0`.
+3. The Release workflow builds the wheel and sdist and attaches them to a GitHub Release.
+
+Notebooks that install from `@main` get the change as soon as it is merged. To pin a notebook to a
+release, install `@v0.3.0` instead of `@main`.
 
 ## Licence
 

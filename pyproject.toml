@@ -1,33 +1,58 @@
 [build-system]
-requires = ["setuptools>=61"]
-build-backend = "setuptools.build_meta"
+build-backend = "hatchling.build"
+requires = [ "hatchling" ]
 
 [project]
 name = "rakiura"
-version = "0.2.0"
 description = "Log your progress on Rakiura steps from a Jupyter notebook."
 readme = "README.md"
-requires-python = ">=3.9"
-license = { text = "MIT" }
-authors = [{ name = "Rakiura Inc." }]
+license = "MIT"
+authors = [ { name = "Rakiura Inc." } ]
+requires-python = ">=3.11"
 classifiers = [
-  "License :: OSI Approved :: MIT License",
-  "Programming Language :: Python :: 3",
-  "Framework :: Jupyter",
+    "Framework :: Jupyter",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
 ]
+dynamic = [ "version" ]
 dependencies = []
+
+[project.optional-dependencies]
+# Used when installed; the standard library's urllib otherwise.
+requests = [ "requests>=2.32" ]
 
 [project.urls]
 Homepage = "https://github.com/Rakiura-Inc/rakiura-py"
 Source = "https://github.com/Rakiura-Inc/rakiura-py"
+Issues = "https://github.com/Rakiura-Inc/rakiura-py/issues"
+Changelog = "https://github.com/Rakiura-Inc/rakiura-py/blob/main/CHANGELOG.md"
 
-[project.optional-dependencies]
-requests = ["requests>=2.25"]
-test = ["pytest>=7"]
+[dependency-groups]
+dev = [
+    # Having ruff in the venv helps with IDE's auto lint/format integrations
+    "ruff==0.17.3",
+    "ty==0.0.96",
+    { include-group = "pytest" },
+]
+pytest = [
+    # matplotlib (with Pillow) runs the real-figure test; the helper itself never needs it.
+    "matplotlib==3.11.2",
+    "pytest==9.2.0",
+    "pytest-randomly==5.0.0",
+    "pytest-xdist==3.8.0",
+]
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["rakiura*"]
+[tool.hatch.version]
+path = "src/rakiura/_version.py"
 
-[tool.pytest.ini_options]
-testpaths = ["tests"]
+[tool.uv]
+# The earliest version that supports the current lock file revision
+required-version = ">=0.8.4"
+
+[tool.ty.analysis]
+# Optional at run time: imported only when present (Colab, a notebook kernel, requests).
+allowed-unresolved-imports = [ "google.colab", "IPython", "IPython.**", "requests" ]

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    "helpers:pinGitHubActionDigests",
+    ":pinDevDependencies",
+  ],
+  "pre-commit": {
+    "enabled": true,
+  },
+  // uv.lock is gitignored (this is a library), so this only takes effect if a lock is ever committed.
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 6am on monday"],
+  },
+  "customManagers": [
+    {
+      // The `# renovate: datasource=... depName=...` comments above versions in the workflows.
+      "customType": "regex",
+      "managerFilePatterns": ["/^\\.github/workflows/.+\\.ya?ml$/"],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\s+\\w+: \"?(?<currentValue>[^\"\\s]+)\"?",
+      ],
+    },
+  ],
+}

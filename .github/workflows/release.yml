@@ -1,0 +1,67 @@
+name: "Release"
+
+# Push a tag like v0.3.0 (matching src/rakiura/_version.py) to build the package and
+# attach the wheel and sdist to a GitHub Release.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  # renovate: datasource=python-version depName=python
+  PYTHON_VERSION: "3.15"
+  # renovate: datasource=pypi depName=uv
+  UV_VERSION: 0.13.7
+
+jobs:
+  release:
+    name: Build & attach to a GitHub Release
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions:
+      contents: write  # create the release and upload its files; nothing else
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install uv ${{ env.UV_VERSION }} & Python ${{ env.PYTHON_VERSION }}
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
+        with:
+          # Purposefully disabling cache for release operations
+          enable-cache: false
+          python-version: ${{ env.PYTHON_VERSION }}
+          version: ${{ env.UV_VERSION }}
+
+      - name: Build package
+        run: uv build
+
+      - name: Check the tag matches the package version
+        run: |
+          wheel="dist/rakiura-${GITHUB_REF_NAME#v}-py3-none-any.whl"
+          if [ ! -f "$wheel" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match the built version:" >&2
+            ls dist >&2
+            exit 1
+          fi
+
+      - name: Create the GitHub Release with the wheel and sdist
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes --verify-tag
+
+    # PyPI publishing goes here once Rakiura has a PyPI account (founder). Use trusted
+    # publishing: a separate job with `environment: pypi` and `permissions: id-token: write`
+    # that downloads dist/ and runs `uv publish`. No API token is ever stored.
