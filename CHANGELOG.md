@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## Unreleased
 
+## 0.3.1 - 2026-11-03
+
+### Fixed
+
+- Lab helpers again find a key saved in Colab Secrets or a credentials file. `rakiura._colab_secret()`
+  and `rakiura._credentials_path()`, which nmrtrain and habtrain call and 0.3.0 removed, are back
+  with their 0.2.0 behaviour, and a contract test keeps them from being removed again.
+
 ## 0.3.0 - 2026-11-03
 
 Nothing changes for a notebook: `rakiura.start`, `done`, `stage_text`, `submit`, the one-click
