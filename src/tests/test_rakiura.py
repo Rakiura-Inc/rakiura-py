@@ -1,25 +1,25 @@
-"""rakiura package tests: a fake /api/notebook/v1 server on localhost.
+"""The 0.1 interface (cell tags, staging) and the transport's safety rules, against a fake API on localhost.
 
-No network, no real key. The fake records what it received so the tests can
-assert the request shapes the helper sends.
+The fake records what it received so the tests can assert the request shapes the helper sends.
 """
-
-from __future__ import annotations
 
 import base64
 import io
-import json
-import os
+import math
+import struct
 import sys
-import threading
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from typing import ClassVar
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-import rakiura  # noqa: E402
+import rakiura
+from rakiura._config import url_allowed
+
+from .conftest import FakeApi, Request, serve
 
 GOOD_KEY = "rknb_" + "a" * 64
+STEP = {"id": "d-onb-1", "displayId": "ONB-001-D1", "name": "Step 1", "url": "u"}
+ITEM_TAG = "ONB-001-D1/listen-intro-talk"
 ME_PAYLOAD = {
     "ok": True,
     "lab": {"id": "lab-1", "name": "Example Lab"},
@@ -35,101 +35,80 @@ ME_PAYLOAD = {
             "canStageArtifacts": True,
             "url": "https://labs.example.test/example-lab/projects/p-onb-001/deliverables/d-onb-1",
             "items": [
-                {"key": "listen-intro-talk", "label": "Listen", "kind": "listen", "tag": "ONB-001-D1/listen-intro-talk", "checked": False},
+                {"key": "listen-intro-talk", "label": "Listen", "kind": "listen", "tag": ITEM_TAG, "checked": False},
             ],
         }
     ],
 }
+UNAUTHENTICATED = {"ok": False, "error": {"code": "unauthenticated", "message": "This key was not accepted."}}
+NOT_FOUND = {"ok": False, "error": {"code": "not_found", "message": "no"}}
 
 
-class Fake(BaseHTTPRequestHandler):
-    received: list = []
-    mode = "ok"
+class Fake(FakeApi):
+    received: ClassVar[list[Request]] = []
+    mode = "ok"  # ok | already | forbidden | redirect | list
 
-    def log_message(self, *a):  # quiet
-        pass
-
-    def _reply(self, status, body):
-        data = json.dumps(body).encode()
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(data)))
-        self.end_headers()
-        self.wfile.write(data)
-
-    def _auth_ok(self):
+    def _auth_ok(self) -> bool:
         return self.headers.get("Authorization") == f"Bearer {GOOD_KEY}"
 
-    def do_GET(self):
-        Fake.received.append(("GET", self.path, None, dict(self.headers)))
+    def do_GET(self) -> None:  # noqa: N802 - the name http.server calls
+        self.record()
         if not self._auth_ok():
-            return self._reply(401, {"ok": False, "error": {"code": "unauthenticated", "message": "This key was not accepted."}})
-        if self.path == "/api/notebook/v1/me":
-            return self._reply(200, ME_PAYLOAD)
-        self._reply(404, {"ok": False, "error": {"code": "not_found", "message": "no"}})
+            self.reply(401, UNAUTHENTICATED)
+        elif self.path == "/api/notebook/v1/me":
+            self.reply(200, ME_PAYLOAD)
+        else:
+            self.reply(404, NOT_FOUND)
 
-    def do_POST(self):
-        length = int(self.headers.get("Content-Length") or 0)
-        body = json.loads(self.rfile.read(length) or b"{}")
-        Fake.received.append(("POST", self.path, body, dict(self.headers)))
+    def do_POST(self) -> None:  # noqa: N802 - the name http.server calls
+        body = self.read_json()
+        self.record(body)
         if Fake.mode == "redirect":
-            self.send_response(302)
-            self.send_header("Location", "/elsewhere")
-            self.send_header("Content-Length", "0")
-            self.end_headers()
-            return
-        if Fake.mode == "list":
-            data = b"[1, 2]"
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(data)))
-            self.end_headers()
-            self.wfile.write(data)
-            return
-        if not self._auth_ok():
-            return self._reply(401, {"ok": False, "error": {"code": "unauthenticated", "message": "This key was not accepted."}})
-        if Fake.mode == "forbidden":
-            return self._reply(403, {"ok": False, "error": {"code": "forbidden", "message": "You can't submit to \"ONB-001-D1\", so nothing was staged."}})
-        if self.path == "/api/notebook/v1/checkpoint":
-            changed = Fake.mode != "already"
-            return self._reply(200, {
-                "ok": True,
-                "deliverable": {"id": "d-onb-1", "displayId": "ONB-001-D1", "name": "Step 1", "url": "u"},
-                "item": {"key": "listen-intro-talk", "label": "Listen", "tag": body.get("cellTag")},
-                "checked": body.get("status", "done") == "done",
-                "changed": changed,
-            })
-        if self.path == "/api/notebook/v1/artifacts":
-            return self._reply(200, {
-                "ok": True,
-                "artifact": {"id": "a1", "title": body.get("title"), "kind": "file" if "fileText" in body else "link"},
-                "deliverable": {"id": "d-onb-1", "displayId": "ONB-001-D1", "name": "Step 1", "url": "u"},
-                "created": Fake.mode != "already",
-            })
-        self._reply(404, {"ok": False, "error": {"code": "not_found", "message": "no"}})
+            self.reply_raw(302, b"", {"Location": "/elsewhere"})
+        elif Fake.mode == "list":
+            self.reply_raw(200, b"[1, 2]")
+        elif not self._auth_ok():
+            self.reply(401, UNAUTHENTICATED)
+        elif Fake.mode == "forbidden":
+            message = 'You can\'t submit to "ONB-001-D1", so nothing was staged.'
+            self.reply(403, {"ok": False, "error": {"code": "forbidden", "message": message}})
+        elif self.path == "/api/notebook/v1/checkpoint":
+            self.reply(
+                200,
+                {
+                    "ok": True,
+                    "deliverable": STEP,
+                    "item": {"key": "listen-intro-talk", "label": "Listen", "tag": body.get("cellTag")},
+                    "checked": body.get("status", "done") == "done",
+                    "changed": Fake.mode != "already",
+                },
+            )
+        elif self.path == "/api/notebook/v1/artifacts":
+            kind = "file" if "fileText" in body else "link"
+            self.reply(
+                200,
+                {
+                    "ok": True,
+                    "artifact": {"id": "a1", "title": body.get("title"), "kind": kind},
+                    "deliverable": STEP,
+                    "created": Fake.mode != "already",
+                },
+            )
+        else:
+            self.reply(404, NOT_FOUND)
 
 
 @pytest.fixture(scope="module")
 def server():
-    httpd = HTTPServer(("127.0.0.1", 0), Fake)
-    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
-    thread.start()
-    yield f"http://127.0.0.1:{httpd.server_port}"
-    httpd.shutdown()
+    yield from serve(Fake)
 
 
 @pytest.fixture(autouse=True)
 def fresh(server, monkeypatch, tmp_path):
     Fake.received.clear()
     Fake.mode = "ok"
-    # Never the real ~/.config/rakiura, never a real browser.
     monkeypatch.setenv("RAKIURA_CREDENTIALS", str(tmp_path / "config" / "rakiura" / "credentials"))
-    monkeypatch.setenv("RAKIURA_NO_BROWSER", "1")
-    rakiura.logout(forget=False)
-    rakiura._session.last_error = None
-    monkeypatch.delenv("RAKIURA_KEY", raising=False)
     monkeypatch.setenv("RAKIURA_URL", server)
-    yield
 
 
 def test_login_from_env(monkeypatch, capsys):
@@ -145,44 +124,46 @@ def test_login_rejects_non_notebook_key(capsys):
 
 
 def test_login_without_key_prints_one_line(monkeypatch, capsys):
-    monkeypatch.setattr("getpass.getpass", lambda prompt="": "")
+    monkeypatch.setattr("getpass.getpass", lambda _prompt="": "")
     assert rakiura.login() is False
     out = capsys.readouterr().out.strip().splitlines()
-    assert len(out) == 1 and out[0].startswith("rakiura:")
+    assert len(out) == 1
+    assert out[0].startswith("rakiura:")
 
 
 def test_me_lists_tags(capsys):
     rakiura.login(GOOD_KEY)
     payload = rakiura.me()
+    assert payload is not None
     assert payload["lab"]["name"] == "Example Lab"
-    out = capsys.readouterr().out
-    assert "ONB-001-D1/listen-intro-talk" in out
+    assert ITEM_TAG in capsys.readouterr().out
     method, path, _, headers = Fake.received[-1]
     assert (method, path) == ("GET", "/api/notebook/v1/me")
     assert headers["Authorization"] == f"Bearer {GOOD_KEY}"
-    assert headers["User-Agent"].startswith("rakiura-py/")
+    assert headers["User-Agent"] == f"rakiura-py/{rakiura.__version__}"
 
 
 def test_checkpoint_sends_cell_tag_and_status(capsys):
     rakiura.login(GOOD_KEY)
-    assert rakiura.checkpoint("ONB-001-D1/listen-intro-talk") is True
+    assert rakiura.checkpoint(ITEM_TAG) is True
     _, path, body, _ = Fake.received[-1]
     assert path == "/api/notebook/v1/checkpoint"
-    assert body == {"cellTag": "ONB-001-D1/listen-intro-talk", "status": "done"}
-    assert "ticked" in capsys.readouterr().out
+    assert body == {"cellTag": ITEM_TAG, "status": "done"}
+    assert 'ticked "Listen" on ONB-001-D1.' in capsys.readouterr().out
 
 
 def test_checkpoint_idempotent_message(capsys):
     rakiura.login(GOOD_KEY)
     Fake.mode = "already"
-    assert rakiura.checkpoint("ONB-001-D1/listen-intro-talk") is True
-    assert "already ticked" in capsys.readouterr().out
+    assert rakiura.checkpoint(ITEM_TAG) is True
+    assert '"Listen" was already ticked.' in capsys.readouterr().out
 
 
-def test_uncheck_sends_undone():
+def test_uncheck_sends_undone(capsys):
     rakiura.login(GOOD_KEY)
-    assert rakiura.uncheck("ONB-001-D1/listen-intro-talk") is True
+    assert rakiura.uncheck(ITEM_TAG) is True
     assert Fake.received[-1][2]["status"] == "undone"
+    assert 'unticked "Listen"' in capsys.readouterr().out
 
 
 def test_checkpoint_bad_tag_never_calls_server(capsys):
@@ -195,40 +176,44 @@ def test_checkpoint_bad_tag_never_calls_server(capsys):
 def test_checkpoint_cell_decorator_runs_function_then_ticks():
     rakiura.login(GOOD_KEY)
 
-    @rakiura.checkpoint_cell("ONB-001-D1/listen-intro-talk")
+    @rakiura.checkpoint_cell(ITEM_TAG)
     def work(x):
         return x * 2
 
     assert work(21) == 42
     assert Fake.received[-1][1] == "/api/notebook/v1/checkpoint"
+    assert work.__name__ == "work"
 
 
 def test_checkpoint_cell_decorator_propagates_own_exception():
     rakiura.login(GOOD_KEY)
 
-    @rakiura.checkpoint_cell("ONB-001-D1/listen-intro-talk")
+    @rakiura.checkpoint_cell(ITEM_TAG)
     def boom():
-        raise ValueError("mine")
+        msg = "mine"
+        raise ValueError(msg)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="mine"):
         boom()
     assert Fake.received == []  # no tick for a cell that failed
 
 
 def test_revoked_key_prints_one_line_and_forgets_key(capsys):
     rakiura.login("rknb_" + "c" * 64)
-    assert rakiura.checkpoint("ONB-001-D1/listen-intro-talk") is False
+    assert rakiura.checkpoint(ITEM_TAG) is False
     out = capsys.readouterr().out.strip().splitlines()
     assert out[-1].startswith("rakiura: This key was not accepted")
     assert rakiura._session.key is None
+    assert rakiura._session.last_error == out[-1]
 
 
-def test_offline_prints_one_line_never_raises(monkeypatch, capsys):
+def test_offline_prints_one_line_never_raises(capsys):
     rakiura.login(GOOD_KEY, url="http://127.0.0.1:9")  # nothing listens here
-    assert rakiura.checkpoint("ONB-001-D1/listen-intro-talk") is False
+    assert rakiura.checkpoint(ITEM_TAG) is False
     out = capsys.readouterr().out.strip().splitlines()
     # The key-in-a-notebook warning, "key set", then exactly one failure line.
-    assert len(out) == 3 and "could not reach" in out[-1]
+    assert len(out) == 3
+    assert "could not reach" in out[-1]
     assert rakiura.me() is None
 
 
@@ -239,19 +224,26 @@ def test_forbidden_message_is_the_servers(capsys):
     assert "nothing was staged" in capsys.readouterr().out
 
 
-def test_stage_link_shape():
+def test_stage_link_shape(capsys):
     rakiura.login(GOOD_KEY)
-    assert rakiura.stage_link("https://example.test/nb.ipynb", "My notebook", step="ONB-001-D1", cell="ONB-001-D1/listen-intro-talk")
-    body = Fake.received[-1][2]
-    assert body == {
+    assert rakiura.stage_link("https://example.test/nb.ipynb", "My notebook", step="ONB-001-D1", cell=ITEM_TAG)
+    assert Fake.received[-1][2] == {
         "deliverableRef": "ONB-001-D1",
         "title": "My notebook",
         "url": "https://example.test/nb.ipynb",
-        "cellTag": "ONB-001-D1/listen-intro-talk",
+        "cellTag": ITEM_TAG,
     }
+    assert 'added "My notebook" to ONB-001-D1. It goes in when you submit: u' in capsys.readouterr().out
 
 
-def test_stage_link_refuses_non_http(capsys):
+def test_stage_link_twice_says_already_added(capsys):
+    rakiura.login(GOOD_KEY)
+    Fake.mode = "already"
+    assert rakiura.stage_link("https://example.test/nb.ipynb", "My notebook", step="ONB-001-D1") is True
+    assert '"My notebook" was already added to ONB-001-D1.' in capsys.readouterr().out
+
+
+def test_stage_link_refuses_non_http():
     rakiura.login(GOOD_KEY)
     assert rakiura.stage_link("file:///tmp/x", "x", step="ONB-001-D1") is False
     assert Fake.received == []
@@ -266,13 +258,20 @@ def test_stage_text_caps_at_50kb(capsys):
     assert Fake.received[-1][2]["mimeType"] == "text/csv"
 
 
+def test_stage_text_refuses_other_mime_types(capsys):
+    rakiura.login(GOOD_KEY)
+    assert rakiura.stage_text("<p>", "page", step="ONB-001-D1", mime="text/html") is False
+    assert Fake.received == []
+    assert "text/plain or text/csv" in capsys.readouterr().out
+
+
 class _Fig:
     """Stands in for a matplotlib Figure: savefig writes a tiny PNG header."""
 
     def __init__(self, size=100):
         self.size = size
 
-    def savefig(self, buf, format="png", dpi=72, bbox_inches=None):
+    def savefig(self, buf, format="png", dpi=72, bbox_inches=None):  # noqa: A002 - matplotlib's keyword
         buf.write(b"\x89PNG\r\n\x1a\n" + b"\0" * max(0, self.size - 8))
 
 
@@ -292,7 +291,7 @@ def test_stage_figure_too_big_prints_one_line(capsys):
     assert "stage_link" in capsys.readouterr().out
 
 
-def test_stage_figure_needs_savefig(capsys):
+def test_stage_figure_needs_savefig():
     rakiura.login(GOOD_KEY)
     assert rakiura.stage_figure(object(), "x", step="ONB-001-D1") is False
     assert Fake.received == []
@@ -301,7 +300,7 @@ def test_stage_figure_needs_savefig(capsys):
 def test_key_never_printed(capsys):
     rakiura.login(GOOD_KEY)
     rakiura.me()
-    rakiura.checkpoint("ONB-001-D1/listen-intro-talk")
+    rakiura.checkpoint(ITEM_TAG)
     assert GOOD_KEY not in capsys.readouterr().out
 
 
@@ -311,12 +310,22 @@ def test_login_refuses_plain_http_to_another_host(capsys):
     assert rakiura._session.key is None
 
 
-def test_login_allows_https_and_local_http():
-    assert rakiura._url_allowed("https://labs.rakiura.co") is True
-    assert rakiura._url_allowed("http://localhost:3000") is True
-    assert rakiura._url_allowed("http://127.0.0.1:3000") is True
-    assert rakiura._url_allowed("http://example.test") is False
-    assert rakiura._url_allowed("ftp://labs.rakiura.co") is False
+@pytest.mark.parametrize(
+    ("url", "allowed"),
+    [
+        ("https://labs.rakiura.co", True),
+        ("http://localhost:3000", True),
+        ("http://127.0.0.1:3000", True),
+        ("http://[::1]:3000", True),
+        ("http://example.test", False),
+        ("ftp://labs.rakiura.co", False),
+        ("https://", False),
+        ("labs.rakiura.co", False),
+        ("http://[::1", False),
+    ],
+)
+def test_only_https_or_local_http_is_allowed(url, allowed):
+    assert url_allowed(url) is allowed
 
 
 @pytest.mark.parametrize("without_requests", [False, True])
@@ -325,16 +334,17 @@ def test_redirect_is_not_followed(monkeypatch, capsys, without_requests):
         monkeypatch.setitem(sys.modules, "requests", None)  # import -> ImportError
     rakiura.login(GOOD_KEY)
     Fake.mode = "redirect"
-    assert rakiura.checkpoint("ONB-001-D1/listen-intro-talk") is False
+    assert rakiura.checkpoint(ITEM_TAG) is False
     assert [r[1] for r in Fake.received] == ["/api/notebook/v1/checkpoint"]
     out = capsys.readouterr().out.strip().splitlines()
-    assert "redirect" in out[-1] and GOOD_KEY not in "\n".join(out)
+    assert "redirect" in out[-1]
+    assert GOOD_KEY not in "\n".join(out)
 
 
 def test_non_object_reply_never_raises(capsys):
     rakiura.login(GOOD_KEY)
     Fake.mode = "list"
-    assert rakiura.checkpoint("ONB-001-D1/listen-intro-talk") is False
+    assert rakiura.checkpoint(ITEM_TAG) is False
     assert "unexpected reply" in capsys.readouterr().out
 
 
@@ -353,7 +363,8 @@ def test_stage_figure_refuses_an_empty_figure(capsys):
     assert rakiura.stage_figure(_AxesFig(axes=[]), "blank", step="ONB-001-D1") is False
     assert Fake.received == []
     out = capsys.readouterr().out
-    assert "empty" in out and "plt.subplots()" in out
+    assert "empty" in out
+    assert "plt.subplots()" in out
     assert out.count("\n") == 3  # the key warning, the login line, then exactly one line
 
 
@@ -363,6 +374,11 @@ def test_stage_figure_with_axes_is_sent():
     assert Fake.received[-1][2]["title"] == "drawn"
 
 
+def _png_width(png: bytes) -> int:
+    """A PNG's width in pixels, from its IHDR chunk."""
+    return struct.unpack(">I", png[16:20])[0]
+
+
 def test_busy_figure_stays_legible_under_the_cap():
     # A busy four-panel figure is ~97 KB as a
     # full-colour PNG at 72 dpi. It used to be shrunk to 36 dpi to fit 50 KB,
@@ -370,16 +386,12 @@ def test_busy_figure_stays_legible_under_the_cap():
     matplotlib = pytest.importorskip("matplotlib")
     pytest.importorskip("PIL")
     matplotlib.use("Agg")
-    import struct
-
-    import matplotlib.pyplot as plt
-
-    import math
+    import matplotlib.pyplot as plt  # only after the backend is chosen
 
     fig, axes = plt.subplots(4, 1, figsize=(9, 11), sharex=True)
     xs = [i / 50 for i in range(400)]
     for row, ax in enumerate(axes):
-        ax.grid(True, alpha=0.25, linestyle=":")
+        ax.grid(visible=True, alpha=0.25, linestyle=":")
         for series in range(4):
             ys = [math.sin(x * (series + 1) + row) * (series + 1) + x for x in xs]
             ax.plot(xs, ys, lw=2, ls=("-", "--")[series % 2], label=f"Star {series} mass")
@@ -393,9 +405,7 @@ def test_busy_figure_stays_legible_under_the_cap():
 
     rakiura.login(GOOD_KEY)
     assert rakiura.stage_figure(fig, "Busy figure", step="ONB-001-D1") is True
-    png = base64.b64decode(Fake.received[-1][2]["fileText"])
-    assert len(Fake.received[-1][2]["fileText"]) <= rakiura.FILE_TEXT_MAX_BYTES
-    width = struct.unpack(">I", png[16:20])[0]
-    width_at_72_dpi = struct.unpack(">I", full.getvalue()[16:20])[0]
-    assert width >= width_at_72_dpi  # never shrunk below 72 dpi
+    sent = Fake.received[-1][2]["fileText"]
+    assert len(sent) <= rakiura.FILE_TEXT_MAX_BYTES
+    assert _png_width(base64.b64decode(sent)) >= _png_width(full.getvalue())  # never shrunk below 72 dpi
     plt.close(fig)
