@@ -1,0 +1,14 @@
+# Changes here will be overwritten by Copier; NEVER EDIT MANUALLY
+_commit: v0.1.0
+_src_path: gh:Rakiura-Inc/python-template
+author_name: Rakiura Inc.
+codeowners: '@Rakiura-Inc/maintainers'
+copyright_year: '2026'
+flavour: library
+github_org: Rakiura-Inc
+license: MIT
+min_python: '3.11'
+package_name: rakiura
+project_description: Log your progress on Rakiura steps from a Jupyter notebook.
+project_name: rakiura-py
+use_ty: true

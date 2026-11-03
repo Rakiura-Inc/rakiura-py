@@ -1,0 +1,26 @@
+# Known vulnerabilities in the dependencies, on every change and weekly (new advisories appear
+# without any change here). The steps live in the shared workflows: https://github.com/Rakiura-Inc/.github
+
+name: "pip-audit"
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+  pull_request: ~
+  schedule:
+    - cron: "30 5 * * 1"
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pip-audit:
+    name: pip-audit
+    permissions:
+      contents: read  # check out the repository
+    uses: Rakiura-Inc/.github/.github/workflows/pip-audit.yml@a9d8c7ab6db197d7b715098d6f91dd462fd8e87e  # v1.0.0

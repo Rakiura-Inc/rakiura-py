@@ -1,0 +1,27 @@
+# OpenSSF Scorecard supply-chain checks; the results appear in the Security tab under code
+# scanning. The steps live in the shared workflows: https://github.com/Rakiura-Inc/.github
+
+name: "Scorecard"
+
+on:
+  workflow_dispatch:
+  branch_protection_rule:  # for the Branch-Protection check
+  schedule:
+    - cron: "15 14 * * 0"  # weekly, for the Maintained check
+  push:
+    branches:
+      - main
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scorecard:
+    name: Scorecard
+    permissions:
+      contents: read  # check out the repository
+      security-events: write  # upload the results to code scanning
+    uses: Rakiura-Inc/.github/.github/workflows/scorecard.yml@a9d8c7ab6db197d7b715098d6f91dd462fd8e87e  # v1.0.0

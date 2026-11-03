@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## Unreleased
 
+Nothing changes for a notebook.
+
+### Changed
+
+- CI calls Rakiura-Inc's shared workflows (tests, git hooks, release) instead of carrying its own
+  steps. A release now also records build provenance for the wheel and sdist.
+- Lint now limits function complexity (ruff C901 and PLR rules), as in the Rakiura template.
+
+### Added
+
+- pip-audit and OpenSSF Scorecard workflows, SECURITY.md (private vulnerability reports),
+  CONTRIBUTING.md, CODEOWNERS and `.copier-answers.yml` for template updates.
+
 ## 0.3.1 - 2026-11-03
 
 ### Fixed
