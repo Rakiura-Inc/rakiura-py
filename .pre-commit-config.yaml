@@ -3,7 +3,9 @@ repos:
     rev: v6.0.0
     hooks:
       - id: check-added-large-files
+        exclude: ^uv\.lock$  # the lock file lists every wheel's hash; it is meant to be large
       - id: check-case-conflict
+      - id: check-json
       - id: check-merge-conflict
       - id: check-toml
       - id: check-yaml
@@ -16,6 +18,21 @@ repos:
     hooks:
       - id: pyproject-fmt
 
+  # Keeps a committed uv.lock in step with pyproject.toml. A library gitignores uv.lock, so there
+  # the hook only refreshes the local copy.
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    rev: 0.13.7
+    hooks:
+      - id: uv-lock
+
+  # Committed teaching notebooks carry no outputs; the executed copies keep theirs.
+  - repo: https://github.com/kynan/nbstripout
+    rev: 0.9.1
+    hooks:
+      - id: nbstripout
+        args: ["--keep-id"]
+        exclude: ^notebooks/executed/
+
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.17.3
     hooks:
@@ -27,6 +44,7 @@ repos:
     rev: v0.21.0
     hooks:
       - id: yamlfmt
+        exclude: ^\.copier-answers\.yml$  # written by copier on every update
 
   - repo: https://github.com/python-jsonschema/check-jsonschema
     rev: 0.39.0
@@ -49,3 +67,4 @@ repos:
     rev: v2.4.3
     hooks:
       - id: codespell
+        exclude: ^(notebooks/executed/|uv\.lock$)  # base64 figures and wheel hashes

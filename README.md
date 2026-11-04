@@ -146,13 +146,23 @@ prek install             # run the git hooks on every commit (prek run --all-fil
 
 The tests run a small fake server on this computer, or mock the HTTP layer. No network, no real
 key, and never your real config folder. CI runs them on Python 3.11 to 3.15, then installs the
-built wheel in a clean venv and runs them again against it.
+built wheel in a clean venv and runs them again against it. CI also runs the git hooks,
+pip-audit (on every change and weekly) and OpenSSF Scorecard, all through
+[Rakiura-Inc's shared workflows](https://github.com/Rakiura-Inc/.github). See
+[CONTRIBUTING.md](CONTRIBUTING.md) for how to send a change, and [SECURITY.md](SECURITY.md) to
+report a vulnerability privately.
+
+This repository follows [Rakiura-Inc/python-template](https://github.com/Rakiura-Inc/python-template)
+(the `library` flavour). `uvx copier update --trust` pulls in later template fixes.
 
 ## Releasing
 
 1. Bump `__version__` in `src/rakiura/_version.py` and add the entry to `CHANGELOG.md`.
 2. Merge to `main`, then tag that commit and push the tag: `git tag v0.3.0 && git push origin v0.3.0`.
-3. The Release workflow builds the wheel and sdist and attaches them to a GitHub Release.
+3. The Release workflow builds the wheel and sdist, records their build provenance and attaches
+   them to a GitHub Release. The shared release workflow signs the provenance, so check a
+   download with
+   `gh attestation verify <file> --repo Rakiura-Inc/rakiura-py --signer-workflow Rakiura-Inc/.github/.github/workflows/release.yml`.
 
 Notebooks that install from `@main` get the change as soon as it is merged. To pin a notebook to a
 release, install `@v0.3.0` instead of `@main`.

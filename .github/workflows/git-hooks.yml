@@ -1,3 +1,6 @@
+# Every hook in .pre-commit-config.yaml, on every file. The steps live in the shared workflows:
+# https://github.com/Rakiura-Inc/.github
+
 name: "Git Hooks"
 
 on:
@@ -7,24 +10,15 @@ on:
       - main
   pull_request: ~
 
-permissions:
-  contents: read
+permissions: {}
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
-  run-prek:
-    name: prek run --all-files
-    runs-on: ubuntu-26.04
-    timeout-minutes: 5
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Run prek
-        uses: j178/prek-action@44924fe9ef4a6f88253c4b6b1bf11c689d3ce53d  # v3.1.0
+  git-hooks:
+    name: Git hooks
+    permissions:
+      contents: read  # check out the repository
+    uses: Rakiura-Inc/.github/.github/workflows/git-hooks.yml@a9d8c7ab6db197d7b715098d6f91dd462fd8e87e  # v1.0.0

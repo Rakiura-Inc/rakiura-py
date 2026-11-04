@@ -1,4 +1,4 @@
-# Adapted from https://docs.astral.sh/uv/guides/integration/github/#using-uv-in-github-actions
+# The steps live in the shared workflows: https://github.com/Rakiura-Inc/.github
 
 name: "Tests"
 
@@ -9,66 +9,21 @@ on:
       - main
   pull_request: ~
 
-permissions:
-  contents: read
+permissions: {}
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
-env:
-  # renovate: datasource=pypi depName=uv
-  UV_VERSION: 0.13.7
-
 jobs:
-  run-tests:
-    name: pytest (Python ${{ matrix.python-version }})
-    runs-on: ubuntu-26.04
-    timeout-minutes: 10
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version:
-          - "3.11"
-          - "3.12"
-          - "3.13"
-          - "3.14"
-          - "3.15"
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Install uv ${{ env.UV_VERSION }} & Python ${{ matrix.python-version }}
-        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
-        with:
-          enable-cache: true
-          python-version: ${{ matrix.python-version }}
-          version: ${{ env.UV_VERSION }}
-
-      - name: Install Python dependencies
-        run: uv sync
-
-      - name: Type check
-        run: uv run ty check
-
-      - name: Run tests
-        run: uv run pytest
-
-      - name: Build package
-        run: uv build
-
-      # What a member's `pip install git+https://...` gets: the wheel alone, in a fresh venv,
-      # with the tests run from outside the source tree so they import the installed copy.
-      - name: Install the wheel in a clean venv and test it
-        env:
-          PYTHON_VERSION: ${{ matrix.python-version }}
-        run: |
-          uv venv --python "$PYTHON_VERSION" "$RUNNER_TEMP/wheel-venv"
-          VIRTUAL_ENV="$RUNNER_TEMP/wheel-venv" uv pip install dist/*.whl --group pytest
-          cp -r src/tests pytest.toml "$RUNNER_TEMP/"
-          cd "$RUNNER_TEMP"
-          wheel-venv/bin/python -c "import rakiura; print(rakiura.__version__, rakiura.__file__)"
-          wheel-venv/bin/python -m pytest tests
+  tests:
+    name: Tests
+    permissions:
+      contents: read  # check out the repository
+    uses: Rakiura-Inc/.github/.github/workflows/python-tests.yml@a9d8c7ab6db197d7b715098d6f91dd462fd8e87e  # v1.0.0
+    with:
+      python-versions: "[\"3.11\", \"3.12\", \"3.13\", \"3.14\", \"3.15\"]"
+      type-check: true
+      import-check: "import rakiura; print(rakiura.__version__, rakiura.__file__)"
+      # What a `pip install git+https://...` gets: the wheel alone, tested again from outside the checkout.
+      wheel-tests: src/tests
